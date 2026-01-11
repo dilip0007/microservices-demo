@@ -1,0 +1,88 @@
+name: Build and Push to ECR
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY_PREFIX: microservices-demo
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: adservice
+            path: src/adservice
+            dockerfile: src/adservice/Dockerfile
+          - name: cartservice
+            path: src/cartservice/src
+            dockerfile: src/cartservice/src/Dockerfile
+          - name: checkoutservice
+            path: src/checkoutservice
+            dockerfile: src/checkoutservice/Dockerfile
+          - name: currencyservice
+            path: src/currencyservice
+            dockerfile: src/currencyservice/Dockerfile
+          - name: emailservice
+            path: src/emailservice
+            dockerfile: src/emailservice/Dockerfile
+          - name: frontend
+            path: src/frontend
+            dockerfile: src/frontend/Dockerfile
+          - name: loadgenerator
+            path: src/loadgenerator
+            dockerfile: src/loadgenerator/Dockerfile
+          - name: paymentservice
+            path: src/paymentservice
+            dockerfile: src/paymentservice/Dockerfile
+          - name: productcatalogservice
+            path: src/productcatalogservice
+            dockerfile: src/productcatalogservice/Dockerfile
+          - name: recommendationservice
+            path: src/recommendationservice
+            dockerfile: src/recommendationservice/Dockerfile
+          - name: shippingservice
+            path: src/shippingservice
+            dockerfile: src/shippingservice/Dockerfile
+          - name: shoppingassistantservice
+            path: src/shoppingassistantservice
+            dockerfile: src/shoppingassistantservice/Dockerfile
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+
+    - name: Create ECR repository if not exists
+      run: |
+        REPO_NAME="${{ env.ECR_REPOSITORY_PREFIX }}-${{ matrix.service.name }}"
+        aws ecr describe-repositories --repository-names "$REPO_NAME" --region ${{ env.AWS_REGION }} || \
+        aws ecr create-repository --repository-name "$REPO_NAME" --region ${{ env.AWS_REGION }}
+
+    - name: Build, tag, and push image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        REPO_NAME: ${{ env.ECR_REPOSITORY_PREFIX }}-${{ matrix.service.name }}
+        IMAGE_TAG: latest
+      run: |
+        docker build -t $ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG -f ${{ matrix.service.dockerfile }} ${{ matrix.service.path }}
+        docker push $ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG
+        echo "image=$ECR_REGISTRY/$REPO_NAME:$IMAGE_TAG" >> $GITHUB_OUTPUT
